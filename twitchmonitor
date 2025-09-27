@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Process streams refresh period in seconds
-PROCESS_SEC=10
+PROCESS_SEC=20
 # Maximum number of encode jobs at once (then falls back to source quality)
 ENCODE_JOBS_LIMIT=2
 
@@ -86,11 +86,8 @@ process_streams() {
 }
 
 print_pids() {
-    if [[ $last_pids != $total_pids ]]; then
-        last_pids=$total_pids
-        echo "--------------------------------------------------------"
-        echo "Total ffmpeg jobs running: $total_pids"
-    fi
+    echo "--------------------------------------------------------"
+    echo "Total ffmpeg jobs running: $total_pids"
 }
 
 while true; do
