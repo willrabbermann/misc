@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# Process streams refresh period in seconds
+PROCESS_SEC=10
+# Maximum number of encode jobs at once (then falls back to source quality)
+ENCODE_JOBS_LIMIT=2
+
+PROFILE_URLS=(
+#   "[channel_name]" "[quality]" "[save_directory]"
+    "monstercat" "low" "/run/media/will/GameDrive/will"
+)
+
+declare -A running_jobs_map
+encode_jobs=0
+
+is_pid_alive() {
+    kill -0 "$1" 2>/dev/null
+    return $?
+}
+
+cleanup_pids() {
+    local pid channel quality
+    encode_jobs=0
+
+    for pid in "${!running_jobs_map[@]}"; do
+        IFS=':' read -r channel quality <<< "${running_jobs_map[$pid]}"
+
+        if ! is_pid_alive "$pid"; then
+            echo "Job for $channel (PID $pid) is dead. Removing from tracking."
+            unset running_jobs_map["$pid"]
+        else
+            if [[ "$quality" != "source" ]]; then
+                encode_jobs=$((encode_jobs + 1))
+            fi
+        fi
+    done
+    total_pids="${#running_jobs_map[@]}"
+}
+
+is_channel_running() {
+    local target_channel="$1"
+    local job_info channel_in_job
+
+    for job_info in "${running_jobs_map[@]}"; do
+        channel_in_job="${job_info%%:*}"
+
+        if [[ "$channel_in_job" == "$target_channel" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+process_streams() {
+    if [ ${#PROFILE_URLS[@]} -eq 0 ]; then
+        echo "Error: PROFILE_URLS array is empty."
+        return 1
+    fi
+
+    for (( i=0; i<${#PROFILE_URLS[@]}; i+=3 )); do
+        local channel="${PROFILE_URLS[i]}"
+        local quality="${PROFILE_URLS[i+1]}"
+        local save_dir="${PROFILE_URLS[i+2]}"
+        cleanup_pids
+        if ! is_channel_running "$channel"; then
+            echo "--------------------------------------------------------"
+            echo "Processing Channel: $channel"
+            echo "Quality: $quality"
+            echo "Save Directory: $save_dir"
+            streamlink --stream-url twitch.tv/$channel worst > /dev/null
+            if [[ $? -ne 1 ]]; then
+                echo "$channel is online."
+                if [[ $encode_jobs -ge $ENCODE_JOBS_LIMIT ]]; then
+                    quality="source"
+                    echo "Encode job limit reached ($ENCODE_JOBS_LIMIT)"
+                fi
+                twitchrecorder "$channel" "$quality" "$save_dir" > /dev/null &
+                running_jobs_map["$!"]="${channel}:${quality}"
+                echo "Started job for $channel with PID: $pid (Quality: $quality)"
+                cleanup_pids
+            else
+                echo "${channel} is offline."
+            fi
+        fi
+    done
+}
+
+print_pids() {
+    if [[ $last_pids != $total_pids ]]; then
+        last_pids=$total_pids
+        echo "--------------------------------------------------------"
+        echo "Total ffmpeg jobs running: $total_pids"
+    fi
+}
+
+while true; do
+    process_streams
+    print_pids
+    sleep $PROCESS_SEC
+done

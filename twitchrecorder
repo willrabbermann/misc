@@ -1,0 +1,176 @@
+#!/bin/bash
+
+declare -A VIDEO_CRFS=(
+    [high]="18"
+    [medium]="23"
+    [low]="28"
+)
+
+usage() {
+    echo "Usage: twitchrecorder <channel_name> <quality> <save_directory>"
+    echo "                                     <optional>   <optional>"
+}
+
+check_command() {
+    local cmd="$1"
+    if ! command -v "$cmd" &> /dev/null
+    then
+        echo "Error: $cmd is not installed."
+        echo "Please install it first."
+        exit 1
+    fi
+}
+
+fetch_twitch_hls_url() {
+    m3u3_url=$(streamlink --stream-url "$FULL_URL" best 2>/dev/null)
+
+    if [ $? -ne 0 ]; then
+        echo "--------------------------------------------------------"
+        echo "$channel_name is offline."
+        echo "--------------------------------------------------------"
+        exit 1
+    fi
+
+    echo "--------------------------------------------------------"
+    echo "Retrieved $channel_name twitch stream URL"
+    echo "--------------------------------------------------------"
+}
+
+check_channel() {
+    if [ -z "$channel_name" ]; then
+        echo "Error: Missing channel_name."
+        usage && exit 1
+    fi
+
+    if [[ "$channel_name" != *"twitch.tv"* ]]; then
+        FULL_URL="https://www.twitch.tv/$channel_name"
+    else
+        usage && exit 1
+    fi
+    echo "$FULL_URL"
+    fetch_twitch_hls_url
+}
+
+select_encoding() {
+    if [[ -n "$quality" ]]; then
+        case $quality in
+            "source")
+                encode_choice=1
+                ;;
+            "high")
+                encode_choice=2
+                crf_key="high"
+                ;;
+            "medium")
+                encode_choice=2
+                crf_key="medium"
+                ;;
+            "low")
+                encode_choice=2
+                crf_key="low"
+                ;;
+        esac
+    else
+        echo "1) Record source (Lossless quality, larger file size, fast)"
+        echo "2) Record source with re-encoding (Lossy, smaller file size, CPU intensive)"
+        read -rp ": " encode_choice
+        case $encode_choice in
+            1)
+                ;;
+            2)
+                echo "--------------------------------------------------------"
+                echo "Select video quality setting for re-encoding:"
+                echo "1) high"
+                echo "2) medium"
+                echo "3) low"
+                read -rp ": " crf_choice
+                case $crf_choice in
+                    1)
+                        crf_key="high"
+                        ;;
+                    2)
+                        crf_key="medium"
+                        ;;
+                    3)
+                        crf_key="low"
+                        ;;
+                    *)
+                        exit 1
+                        ;;
+                esac
+                ;;
+            *)
+                exit 1
+                ;;
+        esac
+    fi
+}
+
+record_stream() {
+
+    case $encode_choice in
+        1)
+            output_file="${channel_name}_source_$(date +%Y%m%d%H%M%S).mkv"
+            echo "--------------------------------------------------------"
+            echo "$output_file"
+            echo "Ctrl+C to safely stop ffmpeg."
+
+            ffmpeg -i "$m3u3_url" \
+                -c copy \
+                -loglevel warning \
+                -timeout 30000 \
+                -reconnect 1 \
+                -reconnect_streamed 1 \
+                -reconnect_delay_max 10 \
+                "$save_dir$output_file" &
+            FFMPEG_PID=$!
+            ;;
+        2)
+            video_crf="${VIDEO_CRFS[$crf_key]}"
+            output_file="${channel_name}_${crf_key}_$(date +%Y%m%d%H%M%S).mp4"
+            echo "--------------------------------------------------------"
+            echo "$output_file"
+            echo "Ctrl+C to safely stop ffmpeg."
+
+            ffmpeg -i "$m3u3_url" \
+                   -c:v libx264 -preset medium -crf "$video_crf" \
+                   -c:a copy \
+                   -movflags faststart \
+                   -loglevel warning \
+                   -timeout 30000 \
+                   -reconnect 1 \
+                   -reconnect_streamed 1 \
+                   -reconnect_delay_max 10 \
+                   "$save_dir$output_file" &
+            FFMPEG_PID=$!
+            ;;
+    esac
+}
+
+cleanup() {
+    exit 0
+}
+
+
+# --- Main execution ---
+
+check_command "streamlink"
+check_command "ffmpeg"
+
+channel_name="$1"
+[[ -n "$2" ]] && quality="$2"
+if [[ -n "$3" ]]; then
+    save_dir="$3"
+    save_dir="${save_dir//%40/ }"
+    [[ "${save_dir: -1}" != "/" ]] && save_dir="${save_dir}/"
+    [[ ! -d "$save_dir" ]] && echo "$save_dir does not exist." && \
+        usage && exit 1
+fi
+
+
+check_channel
+
+trap cleanup SIGINT
+select_encoding
+record_stream
+wait "$FFMPEG_PID"
