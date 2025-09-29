@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# Recursively convert CWD FLAC audio files to Opus format while maintaining
+# the directory structure and copying non-audio files. Safely exits if an
+# input FLAC file is already corrupt.
+
+SRC_D="$PWD"
+SRC="$(basename "$PWD")"
+DES="$(realpath "$PWD/../$SRC (OPUS)")"
+
+BITRATE="256k"
+
+convert() {
+    flacs=$(find . -maxdepth 1 -type f -name '*.flac' -print -quit)
+    if [[ $flacs ]]; then
+        for file in *.flac; do
+            file_basename="${file%.flac}"
+            output="$DESDIR/$file_basename.opus"
+            ffmpeg -xerror -i "$file" -c:a libopus -b:a "$BITRATE" \
+                -map_metadata 0 -map 0:a -vn -y "$output"
+            if [ $? -ne 0 ]; then
+                if [ -f "$output" ]; then
+                    rm -f "$output"
+                fi
+                exit 1
+            fi
+        done
+
+        for file in *; do
+            if [[ -f "$file" &&
+                "$file" != *.flac &&
+                "$file" != *.opus ]]; then
+                cp "$file" "$DESDIR"
+            fi
+        done
+    fi
+}
+
+search_dir() {
+    mkdir -p "$DES"
+    find . -mindepth 1 -type d -print0 | sort -zV |
+    while IFS= read -r -d $'\0' dir; do
+        dir="${dir#./}"
+        DESDIR="$DES/$dir"
+        mkdir -p "$DESDIR"
+        cd "$SRC_D/$dir"
+        convert
+    done
+}
+
+search_dir
