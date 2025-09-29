@@ -40,6 +40,8 @@ search_dir() {
     mkdir -p "$DES"
     declare -a src_dirs
     readarray -t -d '' src_dirs < <(find . -mindepth 1 -type d -print0 | sort -zV)
+    DESDIR="$DES"
+    convert
     for dir in "${src_dirs[@]}"; do
         dir="${dir#./}"
         DESDIR="$DES/$dir"
