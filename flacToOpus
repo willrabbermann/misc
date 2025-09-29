@@ -27,9 +27,7 @@ convert() {
         done
 
         for file in *; do
-            if [[ -f "$file" &&
-                "$file" != *.flac &&
-                "$file" != *.opus ]]; then
+            if [[ -f "$file" && "$file" != *.flac ]]; then
                 cp "$file" "$DESDIR"
             fi
         done
