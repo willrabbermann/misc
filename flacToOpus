@@ -25,13 +25,13 @@ convert() {
                 exit 1
             fi
         done
-
-        for file in *; do
-            if [[ -f "$file" && "$file" != *.flac ]]; then
-                cp "$file" "$DESDIR"
-            fi
-        done
     fi
+
+    for file in *; do
+        if [[ -f "$file" && "$file" != *.flac ]]; then
+            cp "$file" "$DESDIR"
+        fi
+    done
 }
 
 search_dir() {
