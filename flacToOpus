@@ -16,8 +16,10 @@ convert() {
         for file in *.flac; do
             file_basename="${file%.flac}"
             output="$DESDIR/$file_basename.opus"
+
             ffmpeg -xerror -i "$file" -c:a libopus -b:a "$BITRATE" \
                 -map_metadata 0 -map 0:a -vn -y "$output"
+
             if [ $? -ne 0 ]; then
                 if [ -f "$output" ]; then
                     rm -f "$output"
@@ -29,15 +31,16 @@ convert() {
 
     for file in *; do
         if [[ -f "$file" && "$file" != *.flac ]]; then
-            cp "$file" "$DESDIR"
+            cp "$file" "$DESDIR/"
         fi
     done
 }
 
 search_dir() {
     mkdir -p "$DES"
-    find . -mindepth 1 -type d -print0 | sort -zV |
-    while IFS= read -r -d $'\0' dir; do
+    declare -a src_dirs
+    readarray -t -d '' src_dirs < <(find . -mindepth 1 -type d -print0 | sort -zV)
+    for dir in "${src_dirs[@]}"; do
         dir="${dir#./}"
         DESDIR="$DES/$dir"
         mkdir -p "$DESDIR"
