@@ -68,6 +68,8 @@ for file in "${flac_files[@]}"; do
 
     flac --best -f -s $TJ \
          "$file" -o "$TMP_FILE"
+         
+	[[ $? -ne 0 ]] && exit $?
 
     if [[ -f "$TMP_FILE" ]]; then
         original_size=$(stat -c%s "$file")
