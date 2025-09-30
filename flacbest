@@ -1,0 +1,63 @@
+#!/bin/bash
+# Re-encodes .flac files to '--best' compression for smaller size,
+# skipping files already tagged at that level.
+
+cleanup_and_exit() {
+    if [[ -n "$file" ]]; then
+        rm -f "$file.flac.tmp"
+    fi
+    exit 1
+}
+
+if ! command -v flac &> /dev/null
+then
+    echo "Error: The 'flac' command could not be found."
+    echo "Please install the FLAC utilities package (often named 'flac' or 'flac-tools') to run this script."
+    exit 1
+fi
+
+flac_files=()
+while IFS= read -r file_path; do
+    flac_files+=("$file_path")
+done < <(find . -type f -name "*.flac" | sort -V)
+
+echo "Found ${#flac_files[@]} .flac files."
+
+trap cleanup_and_exit INT TERM EXIT
+
+best_level="$(flac --help | grep 'best' | sed -E 's/.*-([0-9]+).*/\1/')"
+
+for file in "${flac_files[@]}"; do
+    TMP_FILE="$file.tmp"
+
+    tag_output=$(metaflac --show-tag="FLAC CL" "$file")
+    tag_value=$(echo "$tag_output" | sed -nE 's/^FLAC CL=([0-9]+)$/\1/p')
+
+    echo "Processing: $file"
+
+    if [[ "$tag_value" == "$best_level" ]]; then
+        echo "  -> Skipped. File already tagged as compression level $best_level."
+        continue
+    fi
+
+    flac --best -f -s \
+         "$file" -o "$TMP_FILE"
+
+    if [[ -f "$TMP_FILE" ]]; then
+        original_size=$(stat -c%s "$file")
+        new_size=$(stat -c%s "$TMP_FILE")
+
+        if (( new_size < original_size )); then
+            echo "  -> Recompressed to level $best_level: Saved $(bc <<< "scale=2; ($original_size - $new_size) / 1048576") MiB."
+            mv -f "$TMP_FILE" "$file"
+        else
+            echo "  -> File is already compressed to level $best_level."
+            rm -f "$TMP_FILE"
+
+        fi
+        metaflac --set-tag="FLAC CL=$best_level" "$file"
+    else
+        echo "  -> Error re-encoding $file. Skipping."
+        rm -f "$TMP_FILE" 2>/dev/null
+    fi
+done
